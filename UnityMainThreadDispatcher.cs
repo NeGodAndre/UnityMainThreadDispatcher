@@ -26,12 +26,37 @@ using System.Threading.Tasks;
 /// things such as UI Manipulation in Unity. It was developed for use in combination with the Firebase Unity plugin, which uses separate threads for event handling
 /// </summary>
 public class UnityMainThreadDispatcher : MonoBehaviour {
-
+	
+	private static UnityMainThreadDispatcher _instance = null;
+	
 	private static readonly Queue<Action> _executionQueue = new Queue<Action>();
-
-	public void Update() {
-		lock(_executionQueue) {
-			while (_executionQueue.Count > 0) {
+	
+	public static UnityMainThreadDispatcher Instance() {
+		if ( !Exists() ) {
+			throw new Exception("UnityMainThreadDispatcher could not find the UnityMainThreadDispatcher object. Please ensure you have added the MainThreadExecutor Prefab to your scene.");
+		}
+		return _instance;
+	}
+	
+	public static bool Exists() {
+		return _instance;
+	}
+	
+	private void Awake() {
+		if ( _instance ) {
+			return;
+		}
+		_instance = this;
+		DontDestroyOnLoad(gameObject);
+	}
+	
+	private void OnDestroy() {
+		_instance = null;
+	}
+	
+	private void Update() {
+		lock ( _executionQueue ) {
+			while ( _executionQueue.Count > 0 ) {
 				_executionQueue.Dequeue().Invoke();
 			}
 		}
@@ -42,38 +67,34 @@ public class UnityMainThreadDispatcher : MonoBehaviour {
 	/// </summary>
 	/// <param name="action">IEnumerator function that will be executed from the main thread.</param>
 	public void Enqueue(IEnumerator action) {
-		lock (_executionQueue) {
-			_executionQueue.Enqueue (() => {
-				StartCoroutine (action);
+		lock ( _executionQueue ) {
+			_executionQueue.Enqueue(() => {
+				StartCoroutine(action);
 			});
 		}
 	}
 
-        /// <summary>
-        /// Locks the queue and adds the Action to the queue
+	/// <summary>
+	/// Locks the queue and adds the Action to the queue
 	/// </summary>
 	/// <param name="action">function that will be executed from the main thread.</param>
-	public void Enqueue(Action action)
-	{
+	public void Enqueue(Action action) {
 		Enqueue(ActionWrapper(action));
 	}
-	
+
 	/// <summary>
 	/// Locks the queue and adds the Action to the queue, returning a Task which is completed when the action completes
 	/// </summary>
 	/// <param name="action">function that will be executed from the main thread.</param>
 	/// <returns>A Task that can be awaited until the action completes</returns>
-	public Task EnqueueAsync(Action action)
-	{
+	public Task EnqueueAsync(Action action) {
 		var tcs = new TaskCompletionSource<bool>();
 
 		void WrappedAction() {
-			try 
-			{
+			try {
 				action();
 				tcs.TrySetResult(true);
-			} catch (Exception ex) 
-			{
+			} catch ( Exception ex ) {
 				tcs.TrySetException(ex);
 			}
 		}
@@ -81,39 +102,9 @@ public class UnityMainThreadDispatcher : MonoBehaviour {
 		Enqueue(ActionWrapper(WrappedAction));
 		return tcs.Task;
 	}
-
 	
-	IEnumerator ActionWrapper(Action a)
-	{
-		a();
+	private IEnumerator ActionWrapper(Action action) {
+		action();
 		yield return null;
 	}
-
-
-	private static UnityMainThreadDispatcher _instance = null;
-
-	public static bool Exists() {
-		return _instance != null;
-	}
-
-	public static UnityMainThreadDispatcher Instance() {
-		if (!Exists ()) {
-			throw new Exception ("UnityMainThreadDispatcher could not find the UnityMainThreadDispatcher object. Please ensure you have added the MainThreadExecutor Prefab to your scene.");
-		}
-		return _instance;
-	}
-
-
-	void Awake() {
-		if (_instance == null) {
-			_instance = this;
-			DontDestroyOnLoad(this.gameObject);
-		}
-	}
-
-	void OnDestroy() {
-			_instance = null;
-	}
-
-
 }
